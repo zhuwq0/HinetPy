@@ -510,7 +510,10 @@ class ContinuousWaveformClient(BaseClient):
         elif outdir:
             dirname = outdir
             data = os.path.join(dirname, data)
-        merge(cnts, data)
+        if len(cnts) > 0:
+            merge(cnts, data)
+        else:
+            os.system(f"touch {data}")
 
         # 3. rename channeltable file
         if not ctable:
