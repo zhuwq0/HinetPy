@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import re
+import shutil
 import tempfile
 import time
 import zipfile
@@ -14,6 +15,7 @@ from datetime import datetime, timedelta
 from html.parser import HTMLParser
 from multiprocessing.pool import ThreadPool
 
+import certifi
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3 import PoolManager
@@ -183,7 +185,9 @@ class BaseClient:
         self.session = requests.Session()
         self.session.mount(self._HINET, AddedCipherAdapter())
         self.session.mount(self._AUTH, AddedCipherAdapter())
-        self.session.get(self._AUTH, timeout=self.timeout)  # get cookie
+        self.session.get(
+            self._AUTH, timeout=self.timeout, verify=certifi.where()
+        )  # get cookie
         resp = self.session.post(
             self._AUTH,
             data={"auth_un": self.user, "auth_pw": self.password},
@@ -527,8 +531,7 @@ class ContinuousWaveformClient(BaseClient):
             ctable = os.path.join(dirname, ctable)
         if dirname and not os.path.exists(dirname):
             os.makedirs(dirname, exist_ok=True)
-        os.rename(ch_euc, ctable)
-
+        shutil.move(ch_euc, ctable)
         # 4. cleanup
         if cleanup:
             for cnt in cnts:
@@ -993,7 +996,7 @@ class StationClient(BaseClient):
             raise ValueError("Only support Hi-net, F-net, S-net and MeSO-net.")
         return stations
 
-    def get_selected_stations(self, code):
+    def get_selected_stations(self, code: str):
         """
         Query stations selected for requesting data.
 
@@ -1001,7 +1004,7 @@ class StationClient(BaseClient):
 
         Parameters
         ----------
-        code: str
+        code
             Network code.
 
         Returns
@@ -1022,7 +1025,6 @@ class StationClient(BaseClient):
         >>> print(*names)
         N.WNNH N.SFNH ...
         """
-
         if code == "0101":
             pattern = r"N\..{3}H"
         elif code in ("0103", "0103A"):
@@ -1036,13 +1038,18 @@ class StationClient(BaseClient):
         for i, text in enumerate(parser.tabledata):
             # If the target station, grep both lon and lat.
             if re.match(pattern, text):
+                latitude, longitude, elevation = parser.tabledata[i + 3 : i + 6]
+                latitude = latitude.strip("N")
+                longitude = longitude.strip("E")
+                elevation = elevation.strip("m")
+
                 stations.append(
                     Station(
                         code=code,
                         name=text,
-                        latitude=float(parser.tabledata[i + 3].strip("N")),
-                        longitude=float(parser.tabledata[i + 4].strip("E")),
-                        elevation=float(parser.tabledata[i + 5].strip("m")),
+                        latitude=latitude,
+                        longitude=longitude,
+                        elevation=elevation,
                     )
                 )
         parser.close()
@@ -1329,9 +1336,9 @@ class Station:
     def __init__(self, code, name, latitude, longitude, elevation):
         self.code = code
         self.name = name
-        self.latitude = float(latitude)
-        self.longitude = float(longitude)
-        self.elevation = float(elevation)
+        self.latitude = float(latitude) if latitude else None
+        self.longitude = float(longitude) if longitude else None
+        self.elevation = float(elevation) if elevation else None
 
     def __str__(self):
         return (
